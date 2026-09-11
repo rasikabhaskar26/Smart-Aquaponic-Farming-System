@@ -1,0 +1,81 @@
+CODE
+#define BLYNK_TEMPLATE_ID "TMPL360rISSZG"
+#define BLYNK_TEMPLATE_NAME "aqueaponic farming"
+#define BLYNK_AUTH_TOKEN "WsdYZSBnju4eirwmflBkgrmwevGI5Y3o"
+
+#include <ESP8266WiFi.h>
+#include <BlynkSimpleEsp8266.h>
+
+char ssid[] = "Vivek's S24 FE";
+char pass[] = "password?";
+
+const int tdsPin = A0;
+const int relayPin = D5;
+
+bool manualMode = false;
+bool manualMotorState = false;
+
+BlynkTimer timer;
+
+// ================== MANUAL CONTROL (V2) ==================
+BLYNK_WRITE(V2) {
+  manualMotorState = param.asInt();
+
+  if (manualMotorState == 1) {
+    manualMode = true;   // Manual ON
+  } else {
+    manualMode = false;  // Manual OFF → Auto mode enabled
+  }
+
+  digitalWrite(relayPin, manualMotorState ? LOW : HIGH);
+  Blynk.virtualWrite(V1, manualMotorState);
+}
+
+// ================== TDS READING + AUTO CONTROL ==================
+void sendTDS() {
+
+  int rawValue = analogRead(tdsPin);
+  float voltage = rawValue * (1.0 / 1024.0);
+  float tds_ppm = voltage * 500.0;
+
+  Serial.print("RAW: ");
+  Serial.print(rawValue);
+  Serial.print("  | TDS: ");
+  Serial.print(tds_ppm);
+  Serial.println(" ppm");
+
+  Blynk.virtualWrite(V0, rawValue);
+  Blynk.virtualWrite(V3, tds_ppm);
+
+  // ---------- AUTO MODE LOGIC ----------
+  if (!manualMode) {
+
+    bool motorOn;
+
+    // Motor ON when TDS > 200
+    if (tds_ppm > 1550) {
+      motorOn = true;
+    } else {
+      motorOn = false;
+    }
+
+    digitalWrite(relayPin, motorOn ? LOW : HIGH); // Relay active LOW
+    Blynk.virtualWrite(V1, motorOn);
+  }
+}
+
+// ================== SETUP ==================
+void setup() {
+  Serial.begin(9600);
+  pinMode(relayPin, OUTPUT);
+  digitalWrite(relayPin, HIGH);  // Motor OFF initially
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+  timer.setInterval(2000, sendTDS);  // Read every 2 seconds
+}
+
+// ================== LOOP ==================
+void loop() {
+  Blynk.run();
+  timer.run();
+}
